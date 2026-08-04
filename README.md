@@ -1,32 +1,26 @@
 
-# ConceptGraphs: Open-Vocabulary 3D Scene Graphs for Perception and Planning
+# ConceptGraphs for modern architectures (Blackwell GPU)
 
-This repository contains the code for the ConceptGraphs project. ConceptGraphs builds open-vocabulary 3D scenegraphs that enable a broad range of perception and task planning capabilities.
+This repository is based on the original ConceptGraphs implementation by the ConceptGraphs authors.
+
+The goal of this repository is to maintain a modernized version of the codebase compatible with recent Python, CUDA, PyTorch and NVIDIA Blackwell GPUs.
+
+This repository preserves the original implementation in the `ali-dev` branch while development and modernization are performed in the `main` branch.
+
+The original paper and repository should be properly cited when using this code in research.
+[Conceptgraphs](https://github.com/concept-graphs/concept-graphs)
 
 [**Project Page**](https://concept-graphs.github.io/) |
 [**Paper**](https://concept-graphs.github.io/assets/pdf/2023-ConceptGraphs.pdf) |
-[**ArXiv**](https://arxiv.org/abs/2309.16650) |
-[**Video**](https://www.youtube.com/watch?v=mRhNkQwRYnc&feature=youtu.be&ab_channel=AliK)
-
-
-[Qiao Gu](https://georgegu1997.github.io/)\*,
-[Ali Kuwajerwala](https://www.alihkw.com/)\*,
-[Sacha Morin](https://sachamorin.github.io/)\*,
-[Krishna Murthy Jatavallabhula](https://krrish94.github.io/)\*,
-[Bipasha Sen](https://bipashasen.github.io/),
-[Aditya Agarwal](https://skymanaditya1.github.io/),
-[Corban Rivera](https://www.jhuapl.edu/work/our-organization/research-and-exploratory-development/red-staff-directory/corban-rivera),
-[William Paul](https://scholar.google.com/citations?user=92bmh84AAAAJ),
-[Kirsty Ellis](https://mila.quebec/en/person/kirsty-ellis/),
-[Rama Chellappa](https://engineering.jhu.edu/faculty/rama-chellappa/),
-[Chuang Gan](https://people.csail.mit.edu/ganchuang/),
-[Celso Miguel de Melo](https://celsodemelo.net/),
-[Joshua B. Tenenbaum](http://web.mit.edu/cocosci/josh.html),
-[Antonio Torralba](https://groups.csail.mit.edu/vision/torralbalab/),
-[Florian Shkurti](http://www.cs.toronto.edu//~florian/),
-[Liam Paull](http://liampaull.ca/)
 
 ![Splash Figure](./assets/splash-final.png)
+
+## Changes from the original implementation
+
+- Updated dependencies for modern Python and PyTorch versions
+- Compatibility with NVIDIA Blackwell GPUs
+- Updated installation instructions
+- Bug fixes for deprecated APIs
 
 ## Getting Started Video Tutorial 
 
@@ -157,15 +151,18 @@ conda create -n conceptgraph python=3.10
 conda activate conceptgraph
 
 ##### Install Pytorch according to your own setup #####
-# For example, if you have a GPU with CUDA 11.8 (We tested it Pytorch 2.0.1)
-conda install pytorch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 pytorch-cuda=11.8 -c pytorch -c nvidia
+# For example, if you have a GPU with CUDA 12.8 (We tested it Pytorch 2.11)
+pip install torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu128
 
 # Install the Faiss library (CPU version should be fine), this is used for quick indexing of pointclouds for duplicate object matching and merging
-conda install -c pytorch faiss-cpu=1.7.4 mkl=2021 blas=1.0=mkl
+# Last version installed to work with Numpy 2.x
+pip install --no-cache-dir faiss-cpu
 
-# Install Pytorch3D (https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md)
-# conda install pytorch3d -c pytorch3d # This detects a conflict. You can use the command below, maybe with a different version
-conda install https://anaconda.org/pytorch3d/pytorch3d/0.7.4/download/linux-64/pytorch3d-0.7.4-py310_cu118_pyt201.tar.bz2
+# Install Pytorch3D (https://github.com/ImageMindAnalytics/pytorch3d-wheels)
+# Since we require a specific version that match with our architecture, this Prebuilt wheel is available in the
+# previous repository
+pip install "pytorch3d==0.7.9+pt2110cu128" \
+  --extra-index-url https://ImageMindAnalytics.github.io/pytorch3d-wheels/simple/
 
 # We find that cuda development toolkit is the least problemantic way to install cuda. 
 # Make sure the version you install is at least close to your cuda version. 
@@ -178,15 +175,15 @@ pip install tyro open_clip_torch wandb h5py openai hydra-core distinctipy ultral
 # You also need to ensure that the installed packages can find the right cuda installation.
 # You can do this by setting the CUDA_HOME environment variable.
 # You can manually set it to the python environment you are using, or set it to the conda prefix of the environment.
-# for me its export CUDA_HOME=/home/kuwajerw/anaconda3/envs/conceptgraph
+# for me its export CUDA_HOME=/home/jorgeturriate/miniconda3/envs/conceptgraph
 export CUDA_HOME=/path/to/anaconda3/envs/conceptgraph
 
 # Finally install conceptgraphs
+# I modified the code from the original conceptgraph repo using ali-dev branc as the base
 cd /path/to/code/ # wherever you want to install conceptgraphs
-# for me its /home/kuwajerw/repos/
-git clone https://github.com/concept-graphs/concept-graphs.git
+# for me its /home/jorgeturriate/repos/
+git clone https://github.com/jorgeturriate/conceptgraphs-blackwell.git
 cd concept-graphs
-git checkout ali-dev
 pip install -e .
 ```
 
