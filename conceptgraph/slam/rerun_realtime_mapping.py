@@ -44,6 +44,7 @@ from conceptgraph.utils.ious import mask_subtract_contained
 from conceptgraph.utils.general_utils import (
     ObjectClasses, 
     find_existing_image_path, 
+    find_saved_detection_path,
     get_det_out_path, 
     get_exp_out_path, 
     get_vlm_annotated_image_path, 
@@ -174,7 +175,8 @@ def main(cfg : DictConfig):
 
         ## Initialize the detection models
         detection_model = measure_time(YOLO)('yolov8l-world.pt')
-        sam_predictor = SAM('sam_l.pt') # SAM('mobile_sam.pt') # UltraLytics SAM
+        #sam_predictor = SAM('sam_l.pt') # SAM('mobile_sam.pt') # UltraLytics SAM
+        sam_predictor = SAM('mobile_sam.pt') # MobileSAM
         # sam_predictor = measure_time(get_sam_predictor)(cfg) # Normal SAM
         clip_model, _, clip_preprocess = open_clip.create_model_and_transforms(
             "ViT-H-14", "laion2b_s32b_b79k"
@@ -187,7 +189,7 @@ def main(cfg : DictConfig):
     else:
         print("\n".join(["NOT Running detections..."] * 10))
 
-    openai_client = get_openai_client()
+    #openai_client = get_openai_client()
 
     save_hydra_config(cfg, exp_out_path)
     save_hydra_config(detections_exp_cfg, exp_out_path, is_detection_config=True)
@@ -201,7 +203,8 @@ def main(cfg : DictConfig):
     for frame_idx in trange(len(dataset)):
         tracker.curr_frame_idx = frame_idx
         counter+=1
-        orr.set_time_sequence("frame", frame_idx)
+        #orr.set_time_sequence("frame", frame_idx)   
+        orr.set_time("frame", sequence=frame_idx)
 
         # Check if we should exit early only if the flag hasn't been set yet
         if not exit_early_flag and should_exit_early(cfg.exit_early_file):
@@ -220,7 +223,13 @@ def main(cfg : DictConfig):
         color_tensor, depth_tensor, intrinsics, *_ = dataset[frame_idx]
 
         # Covert to numpy and do some sanity checks
-        depth_tensor = depth_tensor[..., 0]
+        # If depth tensor has 3 dimensions, we need to squeeze it to 2 dimensions
+        if depth_tensor.ndim == 3:
+            if depth_tensor.shape[2] == 1:
+                depth_tensor = depth_tensor[..., 0]
+            elif depth_tensor.shape[0] == 1:
+                depth_tensor = depth_tensor[0, ...]
+
         depth_array = depth_tensor.cpu().numpy()
         color_np = color_tensor.cpu().numpy() # (H, W, 3)
         image_rgb = (color_np).astype(np.uint8) # (H, W, 3)
@@ -268,7 +277,8 @@ def main(cfg : DictConfig):
             )
             
             # Make the edges
-            labels, edges, edge_image, captions = make_vlm_edges_and_captions(image, curr_det, obj_classes, detection_class_labels, det_exp_vis_path, color_path, cfg.make_edges, openai_client)
+            #labels, edges, edge_image, captions = make_vlm_edges_and_captions(image, curr_det, obj_classes, detection_class_labels, det_exp_vis_path, color_path, cfg.make_edges, openai_client)
+            labels, edges, edge_image, captions = make_vlm_edges_and_captions(image, curr_det, obj_classes, detection_class_labels, det_exp_vis_path, color_path, False, None)
 
             image_crops, image_feats, text_feats = compute_clip_features_batched(
                 image_rgb, curr_det, clip_model, clip_preprocess, clip_tokenizer, obj_classes.get_classes_arr(), cfg.device)
@@ -584,11 +594,11 @@ def main(cfg : DictConfig):
     # LOOP OVER -----------------------------------------------------
     
     # Consolidate captions 
-    for object in objects:
+    """for object in objects:
         obj_captions = object['captions'][:20]
         consolidated_caption = consolidate_captions(openai_client, obj_captions)
-        object['consolidated_caption'] = consolidated_caption
-
+        object['consolidated_caption'] = consolidated_caption"""
+    
     handle_rerun_saving(cfg.use_rerun, cfg.save_rerun, cfg.exp_suffix, exp_out_path)
 
     # Save the pointcloud

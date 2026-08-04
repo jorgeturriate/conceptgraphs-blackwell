@@ -66,25 +66,73 @@ def orr_log_camera(intrinsics, adjusted_pose, prev_adjusted_pose, img_width, img
     # Convert the current adjusted pose to translation and quaternion for logging
     translation = adjusted_pose[:3, 3].tolist()
     quaternion = rotation_matrix_to_quaternion(adjusted_pose[:3, :3])
-    orr.log(
-        "world/camera",
-        orr.Transform3D(translation=translation, rotation=quaternion, from_parent=False)
-    )
 
-    # Log trajectory if not the first frame
-    if frame_idx != 0:
-        prev_translation = prev_adjusted_pose[:3, 3].tolist()
-        prev_quaternion = rotation_matrix_to_quaternion(prev_adjusted_pose[:3, :3])
+    # Prepare a quaternion object if rerun supports it; otherwise pass the raw list
+    rotation_obj = quaternion.tolist() if hasattr(quaternion, 'tolist') else list(quaternion)
+    if getattr(orr, '_rerun', None) is not None and hasattr(orr._rerun, 'Quaternion'):
+        try:
+            rotation_obj = orr._rerun.Quaternion(xyzw=rotation_obj)
+        except Exception:
+            rotation_obj = quaternion.tolist() if hasattr(quaternion, 'tolist') else list(quaternion)
 
-        # Log a line strip from the previous to the current camera pose
+    # Determine relation constant for the current rerun version if available.
+    relation_obj = None
+    if getattr(orr, '_rerun', None) is not None and hasattr(orr._rerun, 'TransformRelation'):
+        try:
+            relation_obj = orr._rerun.TransformRelation.ParentFromChild
+        except Exception:
+            relation_obj = None
+
+    # Try to log Transform3D using the explicit quaternion field and ParentFromChild relation.
+    try:
+        log_kwargs = {
+            'translation': translation,
+            'quaternion': rotation_obj,
+        }
+        if relation_obj is not None:
+            log_kwargs['relation'] = relation_obj
+        else:
+            log_kwargs['from_parent'] = False
+
         orr.log(
-            f"world/camera_trajectory/{frame_idx}",
-            orr.LineStrips3D(
-                [np.vstack([prev_translation, translation]).tolist()],
-                colors=[[255, 0, 0]]  # Red color for the trajectory line
-            )
+            "world/camera",
+            orr.Transform3D(**log_kwargs),
         )
-    prev_adjusted_pose = adjusted_pose.copy()
+    except Exception as e:
+        logging.debug(f"Failed to log Transform3D with rotation: {e}. Falling back to translation-only Transform3D.")
+        try:
+            orr.log(
+                "world/camera",
+                orr.Transform3D(
+                    translation=translation,
+                    relation=orr.TransformRelation.ParentFromChild,
+                )
+            )
+        except Exception as e2:
+            logging.debug(f"Failed to log Transform3D without rotation as well: {e2}")
+
+    # Log trajectory if not the first frame and prev_adjusted_pose is available
+    if frame_idx != 0 and prev_adjusted_pose is not None:
+        try:
+            prev_translation = prev_adjusted_pose[:3, 3].tolist()
+            orr.log(
+                f"world/camera_trajectory/{frame_idx}",
+                orr.LineStrips3D(
+                    [np.vstack([prev_translation, translation]).tolist()],
+                    colors=[[255, 0, 0]]  # Red color for the trajectory line
+                )
+            )
+        except Exception as e:
+            logging.debug(f"Failed to log camera trajectory: {e}")
+
+    # Ensure we always return the current pose so callers can use it as prev_adjusted_pose
+    try:
+        prev_adjusted_pose = adjusted_pose.copy()
+    except Exception:
+        try:
+            prev_adjusted_pose = adjusted_pose.clone()
+        except Exception:
+            prev_adjusted_pose = adjusted_pose
     return prev_adjusted_pose
         
 def orr_log_rgb_image(color_path):
@@ -92,22 +140,47 @@ def orr_log_rgb_image(color_path):
     color_path = color_path
     orr.log(
         "world/camera/rgb_image_encoded",
-        orr.ImageEncoded(path=str(color_path))
+        #orr.ImageEncoded(path=str(color_path))
+        orr.EncodedImage(path=str(color_path))
     )
     
 def orr_log_depth_image(depth_tensor):
 
-    depth_in_meters = depth_tensor.numpy() 
+    # Accept torch tensors or numpy arrays and normalize to a 2D numpy array (HxW)
+    try:
+        # Prefer .cpu().numpy() for torch tensors that may be on GPU
+        depth_in_meters = depth_tensor.cpu().numpy()
+    except Exception:
+        try:
+            depth_in_meters = depth_tensor.numpy()
+        except Exception:
+            depth_in_meters = np.array(depth_tensor)
 
-    # Ensure depth data is in the expected format for rerun (HxW)
-    # depth_in_meters should be a 2D numpy array at this point
-    assert len(depth_in_meters.shape) == 2, "Depth data must be a 2D array"
+    # Handle common singleton channel formats that can appear depending on preprocessing
+    # Examples: (H, W, 1), (1, H, W), (H, 1, W) -> squeeze the unit dimension
+    if depth_in_meters.ndim == 3:
+        # Prefer squeezing a trailing singleton channel (H, W, 1)
+        if depth_in_meters.shape[2] == 1:
+            depth_in_meters = depth_in_meters[..., 0]
+        # (1, H, W)
+        elif depth_in_meters.shape[0] == 1:
+            depth_in_meters = depth_in_meters[0, ...]
+        # (H, 1, W)
+        elif depth_in_meters.shape[1] == 1:
+            depth_in_meters = depth_in_meters[:, 0, :]
+        else:
+            # Fallback: remove any unit-size dimensions
+            depth_in_meters = np.squeeze(depth_in_meters)
+    elif depth_in_meters.ndim > 3:
+        depth_in_meters = np.squeeze(depth_in_meters)
 
-    # This should really use meter = 1.0, but setting it to that makes it too big
-    # I wanna confirm its not me before making an issue on their github
+    # Ensure depth data is now 2D
+    assert len(depth_in_meters.shape) == 2, f"Depth data must be a 2D array, got shape {depth_in_meters.shape}"
+
+    # Log the depth image to rerun. Use meter slightly under 1.0 for visual scaling if needed.
     orr.log(
         "world/camera/depth",
-        orr.DepthImage(depth_in_meters , meter=0.9999999)
+        orr.DepthImage(depth_in_meters, meter=0.9999999)
     )
 
 def orr_log_annotated_image(color_path, det_exp_vis_path):
@@ -119,14 +192,16 @@ def orr_log_annotated_image(color_path, det_exp_vis_path):
     if existing_vis_save_path:
         orr.log(
             "world/camera/rgb_image_annotated",
-            orr.ImageEncoded(path=existing_vis_save_path)
+            #orr.ImageEncoded(path=existing_vis_save_path)
+            orr.EncodedImage(path=existing_vis_save_path)
         )
 
 def orr_log_vlm_image(vlm_image_path, label=""):
     if os.path.exists(vlm_image_path):
         orr.log(
             f"world/camera/vlm_image_{label}",
-            orr.ImageEncoded(path=vlm_image_path)
+            #orr.ImageEncoded(path=vlm_image_path)
+            orr.EncodedImage(path=vlm_image_path)
         )
     else:
         logging.warning(f"VLM image not found at path: {vlm_image_path}")

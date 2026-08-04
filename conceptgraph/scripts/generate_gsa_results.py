@@ -535,7 +535,7 @@ def main(args: argparse.Namespace):
                 # YOLO 
                 # yolo_model.set_classes(classes)
                 yolo_model_w_classes.set_classes(classes)
-                yolo_results_w_classes = yolo_model_w_classes.predict(color_path)
+                yolo_results_w_classes = yolo_model_w_classes.predict(str(color_path))
 
                 yolo_results_w_classes[0].save(vis_save_path[:-4] + "_yolo_out.jpg")
                 xyxy_tensor = yolo_results_w_classes[0].boxes.xyxy 

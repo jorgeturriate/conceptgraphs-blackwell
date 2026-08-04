@@ -177,3 +177,12 @@ cfslam/wandb
 cfslam/tmp.png
 cfslam/temp.json
 outputs
+
+#Downloaded Weights
+weights/
+
+#Models
+*.pt
+
+#VSCode
+.vscode/

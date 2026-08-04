@@ -443,6 +443,7 @@ def make_vlm_edges_and_captions(image, curr_det, obj_classes, detection_class_la
     )
     
     edges = []
+    captions = []
     edge_image = None
     if make_edges_flag:
         vis_save_path_for_vlm = get_vlm_annotated_image_path(det_exp_vis_path, color_path)
@@ -579,6 +580,34 @@ def load_saved_detections(base_path):
         return loaded_detections
     else:
         raise FileNotFoundError(f"No valid file or directory found at {base_path}")
+
+
+def find_saved_detection_path(det_exp_pkl_path, color_path_stem):
+    """Resolve a saved-detection cache path across both new and legacy naming styles.
+
+    Some pipelines save detections under a stem like ``frame000000`` while older code
+    expects a bare integer string such as ``000000``. This helper accepts both forms and
+    returns the first existing file/directory path.
+    """
+    det_exp_pkl_path = Path(det_exp_pkl_path)
+    candidates = [color_path_stem]
+
+    numeric_match = re.search(r"(\d+)$", color_path_stem)
+    if numeric_match:
+        digits = numeric_match.group(1)
+        candidates.append(digits)
+        candidates.append(digits.zfill(6))
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        candidate_path = det_exp_pkl_path / candidate
+        if candidate_path.exists():
+            return candidate_path
+
+    return None
         
         
 class ObjectClasses:

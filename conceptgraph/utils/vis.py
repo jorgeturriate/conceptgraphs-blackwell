@@ -202,7 +202,7 @@ def vis_result_fast_on_depth(
     depth_image: np.ndarray, 
     detections: sv.Detections, 
     classes: list[str], 
-    color: Color | ColorPalette = ColorPalette.default(), 
+    color: Color | ColorPalette = ColorPalette.DEFAULT, 
     instance_random_color: bool = False,
     draw_bbox: bool = True,
 ) -> np.ndarray:
@@ -211,7 +211,13 @@ def vis_result_fast_on_depth(
     This is fast but of the same resolution of the input image, thus can be blurry. 
     '''
     # annotate image with detections
-    box_annotator = sv.BoxAnnotator(
+    """box_annotator = sv.BoxAnnotator(
+        color = color,
+        text_scale=0.3,
+        text_thickness=1,
+        text_padding=2,
+    )"""
+    box_annotator = sv.LabelAnnotator(
         color = color,
         text_scale=0.3,
         text_thickness=1,
@@ -241,8 +247,42 @@ def vis_result_fast_on_depth(
         # First create a shallow copy of the input detections
         detections = dataclasses.replace(detections)
         detections.class_id = np.arange(len(detections))
+
+    # --- FIX SUPERVISION NUMPY 2 ---
+    if detections.mask is not None:
+        # Si la máscara viene empaquetada como (N, 1, H, W), removemos el eje unitario
+        if detections.mask.ndim == 4 and detections.mask.shape[1] == 1:
+            detections.mask = np.squeeze(detections.mask, axis=1)
+        # Si viene como (1, H, W) para una sola detección, la aplanamos a (H, W) o (N, H, W)
+        elif detections.mask.ndim == 3 and detections.mask.shape[0] == 1:
+            detections.mask = np.squeeze(detections.mask, axis=0)
+    # --------------------------------------------------
+
+    # --- 2. RECONSTRUCCIÓN DEL LIENZO SEGÚN EL DEBUG (680, 1, 3) ---
+    # Sacamos las dimensiones reales (Alto: 680, Ancho: 1200) directamente de la máscara
+    if detections.mask is not None and detections.mask.ndim == 3:
+        _, mask_h, mask_w = detections.mask.shape
         
-    annotated_image = mask_annotator.annotate(scene=depth_image.copy(), detections=detections)
+        # Tomamos la imagen original (680, 1, 3)
+        scene_image = depth_image.copy()
+        
+        # Si el ancho es 1 pero la máscara pide 1200, estiramos ese píxel horizontalmente
+        if scene_image.ndim == 3 and scene_image.shape[1] == 1:
+            scene_image = np.repeat(scene_image, mask_w, axis=1)
+        
+        # Si por alguna razón extraña las dimensiones siguen sin cuadrar, creamos una base limpia
+        if scene_image.shape[0] != mask_h or scene_image.shape[1] != mask_w:
+            scene_image = np.zeros((mask_h, mask_w, 3), dtype=np.uint8)
+    else:
+        # Si no hay máscaras, usamos la imagen tal cual
+        scene_image = depth_image.copy()
+    # --------------------------------------------------------------
+    # In modern Supervision library, LabelAnnotator requieres uint8 scenes
+    if scene_image.dtype != np.uint8:
+        scene_image = (scene_image * 255).astype(np.uint8) if scene_image.max() <= 1.0 else scene_image.astype(np.uint8)
+
+    #annotated_image = mask_annotator.annotate(scene=depth_image.copy(), detections=detections)
+    annotated_image = mask_annotator.annotate(scene=scene_image, detections=detections)
     
     if draw_bbox:
         annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
@@ -311,7 +351,8 @@ def old_filter_detections(
 
     return filtered_detections, filtered_labels
 
-class CustomBoxAnnotator(sv.BoxAnnotator):
+###class CustomBoxAnnotator(sv.BoxAnnotator):
+class CustomBoxAnnotator(sv.LabelAnnotator):
     def __init__(
         self,
         color: Union[Color, ColorPalette] = ColorPalette.DEFAULT,
@@ -462,7 +503,7 @@ def vis_result_for_vlm(
     image: np.ndarray, 
     detections: sv.Detections, 
     labels: list[str], 
-    color: Color | ColorPalette = ColorPalette.default(), 
+    color: Color | ColorPalette = ColorPalette.DEFAULT, 
     draw_bbox: bool = True,
     thickness: int = 2,
     text_scale: float = 0.3,
@@ -497,7 +538,7 @@ def vis_result_fast(
     image: np.ndarray, 
     detections: sv.Detections, 
     classes: list[str], 
-    color: Color | ColorPalette = ColorPalette.default(), 
+    color: Color | ColorPalette = ColorPalette.DEFAULT, 
     instance_random_color: bool = False,
     draw_bbox: bool = True,
 ) -> np.ndarray:
@@ -506,7 +547,13 @@ def vis_result_fast(
     This is fast but of the same resolution of the input image, thus can be blurry. 
     '''
     # annotate image with detections
-    box_annotator = sv.BoxAnnotator(
+    """box_annotator = sv.BoxAnnotator(
+        color = color,
+        text_scale=0.3,
+        text_thickness=1,
+        text_padding=2,
+    )"""
+    box_annotator = sv.LabelAnnotator(
         color = color,
         text_scale=0.3,
         text_thickness=1,

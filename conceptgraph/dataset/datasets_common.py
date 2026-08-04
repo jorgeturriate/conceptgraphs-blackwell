@@ -57,6 +57,17 @@ def as_intrinsics_matrix(intrinsics):
     return K
 
 
+def _safe_torch_from_numpy(array, dtype=None):
+    """Build a torch tensor without relying on the NumPy/PyTorch C-ABI bridge.
+
+    This is intentionally more defensive than ``torch.from_numpy`` because that call
+    can fail when the local NumPy version is ABI-incompatible with the installed
+    PyTorch build.
+    """
+    if torch.is_tensor(array):
+        return array.to(dtype=dtype) if dtype is not None else array
+    return torch.tensor(np.asarray(array).tolist(), dtype=dtype)
+
 
 def readEXR_onlydepth(filename):
     """
@@ -218,11 +229,33 @@ class GradSLAMDataset(torch.utils.data.Dataset):
             - Input: :math:`(H_\text{old}, W_\text{old}, C)`
             - Output: :math:`(H, W, C)` if `self.channels_first == False`, else :math:`(C, H, W)`.
         """
-        color = cv2.resize(
+
+        """color = cv2.resize(
             color,
             (self.desired_width, self.desired_height),
             interpolation=cv2.INTER_LINEAR,
+        )"""
+        # Convert to standard Python lists to erase broken NumPy C-headers
+        if isinstance(color, np.ndarray):
+            color_list = color.tolist()
+        else:
+            color_list = np.array(color).tolist()
+
+        # Rebuild a completely new tensor from the raw Python list
+        color_t = torch.tensor(color_list, dtype=torch.float32) # shape: (H, W, C)
+        color_t = color_t.permute(2, 0, 1).unsqueeze(0) # shape: (1, C, H, W)
+        
+        # Resize safely using PyTorch
+        color_t = torch.nn.functional.interpolate(
+            color_t, 
+            size=(self.desired_height, self.desired_width), 
+            mode='bilinear', 
+            align_corners=False
         )
+        
+        # Extract back into the expected NumPy format safely
+        color = color_t.squeeze(0).permute(1, 2, 0).cpu().numpy()
+        
         if self.normalize_color:
             color = conceptgraphs_datautils.normalize_image(color)
         if self.channels_first:
@@ -243,12 +276,30 @@ class GradSLAMDataset(torch.utils.data.Dataset):
             - depth: :math:`(H_\text{old}, W_\text{old})`
             - Output: :math:`(H, W, 1)` if `self.channels_first == False`, else :math:`(1, H, W)`.
         """
-        depth = cv2.resize(
+
+        """depth = cv2.resize(
             depth.astype(float),
             (self.desired_width, self.desired_height),
             interpolation=cv2.INTER_NEAREST,
         )
-        depth = np.expand_dims(depth, -1)
+        depth = np.expand_dims(depth, -1)"""
+        # Convert to standard Python lists to erase broken NumPy C-headers
+        if isinstance(depth, np.ndarray):
+            depth_list = depth.tolist()
+        else:
+            depth_list = np.array(depth).tolist()
+
+        # Rebuild a completely new tensor from the raw Python list
+        depth_t = torch.tensor(depth_list, dtype=torch.float32).unsqueeze(0).unsqueeze(0) # (1, 1, H, W)
+        
+        # Resize safely using PyTorch
+        depth_t = torch.nn.functional.interpolate(
+            depth_t, 
+            size=(self.desired_height, self.desired_width), 
+            mode='nearest'
+        )
+        depth = depth_t.squeeze(0).squeeze(0).cpu().numpy()
+
         if self.channels_first:
             depth = conceptgraphs_datautils.channels_first(depth)
         return depth / self.png_depth_scale
@@ -281,7 +332,7 @@ class GradSLAMDataset(torch.utils.data.Dataset):
             K (torch.Tensor): Camera intrinsics matrix, of shape (3, 3)
         '''
         K = as_intrinsics_matrix([self.fx, self.fy, self.cx, self.cy])
-        K = torch.from_numpy(K)
+        K = _safe_torch_from_numpy(K, dtype=torch.float32)
         return K
     
     def read_embedding_from_file(self, embedding_path: str):
@@ -295,7 +346,6 @@ class GradSLAMDataset(torch.utils.data.Dataset):
         depth_path = self.depth_paths[index]
         color = np.asarray(imageio.imread(color_path), dtype=float)
         color = self._preprocess_color(color)
-        color = torch.from_numpy(color)
         if ".png" in depth_path:
             # depth_data = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
             depth = np.asarray(imageio.imread(depth_path), dtype=np.int64)
@@ -307,13 +357,15 @@ class GradSLAMDataset(torch.utils.data.Dataset):
             raise NotImplementedError
 
         K = as_intrinsics_matrix([self.fx, self.fy, self.cx, self.cy])
-        K = torch.from_numpy(K)
+        K_numpy = np.asarray(K, dtype=np.float32)
         if self.distortion is not None:
             # undistortion is only applied on color image, not depth!
-            color = cv2.undistort(color, K, self.distortion)
+            color = cv2.undistort(color, K_numpy, self.distortion)
 
+        color = _safe_torch_from_numpy(color, dtype=torch.float32)
+        K = _safe_torch_from_numpy(K_numpy, dtype=torch.float32)
         depth = self._preprocess_depth(depth)
-        depth = torch.from_numpy(depth)
+        depth = _safe_torch_from_numpy(depth, dtype=torch.float32)
 
         K = conceptgraphs_datautils.scale_intrinsics(
             K, self.height_downsample_ratio, self.width_downsample_ratio
@@ -416,7 +468,7 @@ class ICLDataset(GradSLAMDataset):
             _curpose[0] = _posearr[pose_line_idx]
             _curpose[1] = _posearr[pose_line_idx + 1]
             _curpose[2] = _posearr[pose_line_idx + 2]
-            poses.append(torch.from_numpy(_curpose).float())
+            poses.append(_safe_torch_from_numpy(_curpose, dtype=torch.float32))
 
         return poses
 
@@ -472,10 +524,13 @@ class ReplicaDataset(GradSLAMDataset):
             lines = f.readlines()
         for i in range(self.num_imgs):
             line = lines[i]
-            c2w = np.array(list(map(float, line.split()))).reshape(4, 4)
+            #c2w = np.array(list(map(float, line.split()))).reshape(4, 4)
+            c2w_list = list(map(float, line.split()))
+
             # c2w[:3, 1] *= -1
             # c2w[:3, 2] *= -1
-            c2w = torch.from_numpy(c2w).float()
+            #c2w = torch.from_numpy(c2w).float()
+            c2w = torch.tensor(c2w_list).reshape(4, 4).float()
             poses.append(c2w)
         return poses
 
@@ -529,7 +584,7 @@ class ScannetDataset(GradSLAMDataset):
         poses = []
         posefiles = natsorted(glob.glob(f"{self.input_folder}/pose/*.txt"))
         for posefile in posefiles:
-            _pose = torch.from_numpy(np.loadtxt(posefile))
+            _pose = _safe_torch_from_numpy(np.loadtxt(posefile), dtype=torch.float32)
             poses.append(_pose)
         return poses
 
@@ -589,7 +644,7 @@ class Ai2thorDataset(GradSLAMDataset):
         poses = []
         posefiles = natsorted(glob.glob(f"{self.input_folder}/pose/*.txt"))
         for posefile in posefiles:
-            _pose = torch.from_numpy(np.loadtxt(posefile))
+            _pose = _safe_torch_from_numpy(np.loadtxt(posefile), dtype=torch.float32)
             poses.append(_pose)
         return poses
 
@@ -599,7 +654,7 @@ class Ai2thorDataset(GradSLAMDataset):
             embedding = cv2.resize(
                 embedding, (self.desired_width, self.desired_height), interpolation=cv2.INTER_NEAREST
             )
-            embedding = torch.from_numpy(embedding).long() # (H, W)
+            embedding = _safe_torch_from_numpy(embedding, dtype=torch.long) # (H, W)
             embedding = F.one_hot(embedding, num_classes = self.embedding_dim) # (H, W, C)
             embedding = embedding.half() # (H, W, C)
             embedding = embedding.permute(2, 0, 1) # (C, H, W)
@@ -694,7 +749,7 @@ class AzureKinectDataset(GradSLAMDataset):
                     _curpose.append(list(map(float, lines[5 * i + 3].split())))
                     _curpose.append(list(map(float, lines[5 * i + 4].split())))
                     _curpose = np.array(_curpose).reshape(4, 4)
-                    poses.append(torch.from_numpy(_curpose))
+                    poses.append(_safe_torch_from_numpy(_curpose, dtype=torch.float32))
             else:
                 poses = []
                 lines = None
@@ -704,7 +759,7 @@ class AzureKinectDataset(GradSLAMDataset):
                     if len(line.split()) == 0:
                         continue
                     c2w = np.array(list(map(float, line.split()))).reshape(4, 4)
-                    poses.append(torch.from_numpy(c2w))
+                    poses.append(_safe_torch_from_numpy(c2w, dtype=torch.float32))
             return poses
 
     def read_embedding_from_file(self, embedding_file_path):
@@ -773,7 +828,7 @@ class RealsenseDataset(GradSLAMDataset):
             ]
         ).float()
         for posefile in posefiles:
-            c2w = torch.from_numpy(np.load(posefile)).float()
+            c2w = _safe_torch_from_numpy(np.load(posefile), dtype=torch.float32)
             _R = c2w[:3, :3]
             _t = c2w[:3, 3]
             _pose = P @ c2w @ P.T
@@ -857,7 +912,7 @@ class Record3DDataset(GradSLAMDataset):
             ]
         ).float()
         for posefile in posefiles:
-            c2w = torch.from_numpy(np.load(posefile)).float()
+            c2w = _safe_torch_from_numpy(np.load(posefile), dtype=torch.float32)
             _R = c2w[:3, :3]
             _t = c2w[:3, 3]
             _pose = P @ c2w @ P.T
@@ -940,7 +995,7 @@ class MultiscanDataset(GradSLAMDataset):
             transform = np.reshape(transform, (4, 4), order='F')
             transform = np.dot(transform, np.diag([1, -1, -1, 1]))
             transform = transform / transform[3][3]
-            poses.append(torch.from_numpy(transform).float())
+            poses.append(_safe_torch_from_numpy(transform, dtype=torch.float32))
             
         return poses
         
@@ -1008,7 +1063,7 @@ class Hm3dDataset(GradSLAMDataset):
                 pose_raw = json.load(f)
             pose = np.asarray(pose_raw['pose'])
             
-            pose = torch.from_numpy(pose).float()
+            pose = _safe_torch_from_numpy(pose, dtype=torch.float32)
             pose = P @ pose @ P.T
             
             poses.append(pose)

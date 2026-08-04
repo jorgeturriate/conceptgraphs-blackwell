@@ -438,7 +438,7 @@ class MultiWinApp:
                 image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
                 # Do initial object detection
-                results = self.detection_model.predict(color_path, conf=0.1, verbose=False)
+                results = self.detection_model.predict(str(color_path), conf=0.1, verbose=False)
                 confidences = results[0].boxes.conf.cpu().numpy()
                 detection_class_ids = results[0].boxes.cls.cpu().numpy().astype(int)
                 xyxy_tensor = results[0].boxes.xyxy

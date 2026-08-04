@@ -194,7 +194,7 @@ def main(cfg : DictConfig):
     for frame_idx in trange(total_frames):
         tracker.curr_frame_idx = frame_idx
         counter+=1
-        orr.set_time_sequence("frame", frame_idx)
+        orr.set_time("frame", sequence=frame_idx)
 
         # Check if we should exit early only if the flag hasn't been set yet
         if not exit_early_flag and should_exit_early(cfg.exit_early_file):
@@ -322,14 +322,17 @@ def main(cfg : DictConfig):
                 cv2.imwrite(str(vis_save_path).replace(".jpg", "_depth_only.jpg"), depth_image_rgb)
                 save_detection_results(det_exp_pkl_path / vis_save_path.stem, results)
         else:
-            # Support current and old saving formats
-            if os.path.exists(det_exp_pkl_path / color_path.stem):
-                raw_gobs = load_saved_detections(det_exp_pkl_path / color_path.stem)
-            elif os.path.exists(det_exp_pkl_path / f"{int(color_path.stem):06}"):
-                raw_gobs = load_saved_detections(det_exp_pkl_path / f"{int(color_path.stem):06}")
+            # Support current and old saving formats without assuming the stem is a plain integer.
+            saved_detection_path = find_saved_detection_path(det_exp_pkl_path, color_path.stem)
+            if saved_detection_path is not None:
+                raw_gobs = load_saved_detections(saved_detection_path)
             else:
                 # if no detections, throw an error
-                raise FileNotFoundError(f"No detections found for frame {frame_idx}at paths \n{det_exp_pkl_path / color_path.stem} or \n{det_exp_pkl_path / f'{int(color_path.stem):06}'}.")
+                raise FileNotFoundError(
+                    f"No detections found for frame {frame_idx} at paths \n"
+                    f"{det_exp_pkl_path / color_path.stem} or \n"
+                    f"{det_exp_pkl_path / color_path.stem}"
+                )
 
         # get pose, this is the untrasformed pose.
         unt_pose = s_camera_pose
