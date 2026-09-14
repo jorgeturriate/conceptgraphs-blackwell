@@ -1,0 +1,7 @@
+defaults:
+  - base_paths
+
+dataset_root: ${data_root}/Stonefish
+dataset_config: ${repo_root}/conceptgraph/dataset/dataconfigs/stonefish/stonefish.yaml
+scene_id: cirs_sequence
+render_camera_path: ${repo_root}/conceptgraph/dataset/dataconfigs/replica/replica_room0.json

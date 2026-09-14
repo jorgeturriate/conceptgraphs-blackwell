@@ -39,7 +39,9 @@ from conceptgraph.utils.optional_rerun_wrapper import (
 from conceptgraph.utils.optional_wandb_wrapper import OptionalWandB
 from conceptgraph.utils.geometry import rotation_matrix_to_quaternion
 from conceptgraph.utils.logging_metrics import DenoisingTracker, MappingTracker
-from conceptgraph.utils.vlm import consolidate_captions, get_obj_rel_from_image_gpt4v, get_openai_client
+#from conceptgraph.utils.vlm import consolidate_captions, get_obj_rel_from_image_gpt4v, get_openai_client
+#from conceptgraph.utils.vlm_gemini import get_obj_rel_from_image_gpt4v, get_obj_captions_from_image_gpt4v, consolidate_captions, get_gemini_client
+from conceptgraph.utils.vlm_ollama import get_obj_rel_from_image_gpt4v, get_obj_captions_from_image_gpt4v, consolidate_captions, get_ollama_client
 from conceptgraph.utils.ious import mask_subtract_contained
 from conceptgraph.utils.general_utils import (
     ObjectClasses, 
@@ -190,6 +192,8 @@ def main(cfg : DictConfig):
         print("\n".join(["NOT Running detections..."] * 10))
 
     #openai_client = get_openai_client()
+    #openai_client = get_gemini_client()
+    openai_client = get_ollama_client()
 
     save_hydra_config(cfg, exp_out_path)
     save_hydra_config(detections_exp_cfg, exp_out_path, is_detection_config=True)
@@ -275,10 +279,14 @@ def main(cfg : DictConfig):
                 class_id=detection_class_ids,
                 mask=masks_np,
             )
+
+            if len(curr_det) == 0:
+                print(f"Frame {frame_idx}: No objects detected with YOLO/SAM; skipping descriptor processing...")
+                continue
             
             # Make the edges
-            #labels, edges, edge_image, captions = make_vlm_edges_and_captions(image, curr_det, obj_classes, detection_class_labels, det_exp_vis_path, color_path, cfg.make_edges, openai_client)
-            labels, edges, edge_image, captions = make_vlm_edges_and_captions(image, curr_det, obj_classes, detection_class_labels, det_exp_vis_path, color_path, False, None)
+            labels, edges, edge_image, captions = make_vlm_edges_and_captions(image, curr_det, obj_classes, detection_class_labels, det_exp_vis_path, color_path, cfg.make_edges, openai_client)
+            #labels, edges, edge_image, captions = make_vlm_edges_and_captions(image, curr_det, obj_classes, detection_class_labels, det_exp_vis_path, color_path, False, None)
 
             image_crops, image_feats, text_feats = compute_clip_features_batched(
                 image_rgb, curr_det, clip_model, clip_preprocess, clip_tokenizer, obj_classes.get_classes_arr(), cfg.device)
@@ -310,15 +318,24 @@ def main(cfg : DictConfig):
             if cfg.save_detections:
 
                 vis_save_path = (det_exp_vis_path / color_path.name).with_suffix(".jpg")
+
                 # Visualize and save the annotated image
-                annotated_image, labels = vis_result_fast(image, curr_det, obj_classes.get_classes_arr())
-                cv2.imwrite(str(vis_save_path), annotated_image)
+                try:
+                    annotated_image, labels = vis_result_fast(image, curr_det, obj_classes.get_classes_arr())
+                    cv2.imwrite(str(vis_save_path), annotated_image)
+                except Exception as e:
+                    print(f"Warning visualizando RGB: {e}")
 
                 depth_image_rgb = cv2.normalize(depth_array, None, 0, 255, cv2.NORM_MINMAX)
                 depth_image_rgb = depth_image_rgb.astype(np.uint8)
                 depth_image_rgb = cv2.cvtColor(depth_image_rgb, cv2.COLOR_GRAY2BGR)
-                annotated_depth_image, labels = vis_result_fast_on_depth(depth_image_rgb, curr_det, obj_classes.get_classes_arr())
-                cv2.imwrite(str(vis_save_path).replace(".jpg", "_depth.jpg"), annotated_depth_image)
+
+                try:
+                    annotated_depth_image, labels = vis_result_fast_on_depth(depth_image_rgb, curr_det, obj_classes.get_classes_arr())
+                    cv2.imwrite(str(vis_save_path).replace(".jpg", "_depth.jpg"), annotated_depth_image)
+                except Exception as e:
+                    print(f"Warning visualizando Depth con Supervision: {e}")
+
                 cv2.imwrite(str(vis_save_path).replace(".jpg", "_depth_only.jpg"), depth_image_rgb)
                 save_detection_results(det_exp_pkl_path / vis_save_path.stem, results)
         else:
@@ -359,7 +376,10 @@ def main(cfg : DictConfig):
 
         gobs = filtered_gobs
 
-        if len(gobs['mask']) == 0: # no detections in this frame
+        #if len(gobs['mask']) == 0: # no detections in this frame
+        #    continue
+        if gobs is None or len(gobs.get('mask', [])) == 0:
+            print(f"Frame {frame_idx}: No se encontraron detecciones válidas, saltando frame...")
             continue
 
         # this helps make sure things like pillows on couches are separate objects
@@ -594,10 +614,11 @@ def main(cfg : DictConfig):
     # LOOP OVER -----------------------------------------------------
     
     # Consolidate captions 
-    """for object in objects:
+    for object in objects:
         obj_captions = object['captions'][:20]
         consolidated_caption = consolidate_captions(openai_client, obj_captions)
-        object['consolidated_caption'] = consolidated_caption"""
+        object['consolidated_caption'] = consolidated_caption
+        #object['consolidated_caption'] = "undefined" # placeholder for now, since we don't have access to the openai client
     
     handle_rerun_saving(cfg.use_rerun, cfg.save_rerun, cfg.exp_suffix, exp_out_path)
 

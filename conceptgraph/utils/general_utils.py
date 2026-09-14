@@ -11,7 +11,9 @@ from conceptgraph.slam.utils import prepare_objects_save_vis
 from conceptgraph.utils.ious import mask_subtract_contained
 import supervision as sv
 import scipy.ndimage as ndi 
-from conceptgraph.utils.vlm import get_obj_captions_from_image_gpt4v, get_obj_rel_from_image_gpt4v, vlm_extract_object_captions
+#from conceptgraph.utils.vlm import get_obj_captions_from_image_gpt4v, get_obj_rel_from_image_gpt4v, vlm_extract_object_captions
+#from conceptgraph.utils.vlm_gemini import get_obj_captions_from_image_gpt4v, get_obj_rel_from_image_gpt4v
+from conceptgraph.utils.vlm_ollama import get_obj_captions_from_image_gpt4v, get_obj_rel_from_image_gpt4v
 import cv2
 import re
 
@@ -297,7 +299,7 @@ def plot_edges_from_vlm(image: np.ndarray, edges, detections: sv.Detections, obj
         if src_label in label_to_centroid_color and dst_label in label_to_centroid_color:
             src_centroid, _ = label_to_centroid_color[src_label]
             dst_centroid, dst_color = label_to_centroid_color[dst_label]
-            # Draw line from source to destination object with the color of the destination object
+            # Draw line from source to destination objeget_obj_captions_from_image_gpt4vct with the color of the destination object
             cv2.line(annotated_image, src_centroid, dst_centroid, dst_color, 2)
     
     if save_path:
@@ -383,6 +385,11 @@ def filter_detections(
 
         if keep:
             filtered_detections.append(current_det)
+
+    if len(filtered_detections) == 0:
+        empty_det = sv.Detections.empty()
+        empty_labels = []
+        return empty_det, empty_labels
 
     # Unzip the filtered results
     confidences, class_ids, xyxy, masks, indices = zip(*filtered_detections)
