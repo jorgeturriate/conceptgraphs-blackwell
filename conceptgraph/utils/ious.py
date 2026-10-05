@@ -464,6 +464,10 @@ def mask_subtract_contained(xyxy: np.ndarray, mask: np.ndarray, th1=0.8, th2=0.7
     Returns:
         mask_sub: (N, H, W), binary mask
     '''
+    #Added to avoid None masks
+    if mask is None:
+        return None
+
     N = xyxy.shape[0] # number of boxes
 
     # Get areas of each xyxy

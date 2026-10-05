@@ -174,11 +174,27 @@ def annotate_for_vlm(
     #     print(f"Line 604, image.shape[0]: {image.shape[0]}")
     #     text_scale = 2.5
     #     text_thickness = 5
+
+    # Initial validation 
+    if detections is None or len(detections) == 0:
+        return image, []
+        
     total_pixels = image.shape[0] * image.shape[1]
     small_mask_size = total_pixels * small_mask_threshold
     
     detections_mask = detections.mask
     detections_mask = mask_subtract_contained(detections.xyxy, detections_mask)
+
+    # --- IF Masks are none---
+    if detections_mask is None:
+        H, W = image.shape[:2]
+        detections_mask = np.zeros((len(detections.xyxy), H, W), dtype=bool)
+        for i, box in enumerate(detections.xyxy):
+            x1, y1, x2, y2 = map(int, box)
+            # Rellenar el área de la caja con True
+            detections_mask[i, y1:y2, x1:x2] = True
+        detections.mask = detections_mask
+    # ---------------------------------------------------------
     
     # Sort detections by mask area, large to small, and keep track of original indices
     mask_areas = [np.count_nonzero(mask) for mask in detections_mask]

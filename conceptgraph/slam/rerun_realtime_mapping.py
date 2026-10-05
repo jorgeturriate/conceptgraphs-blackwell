@@ -193,7 +193,7 @@ def main(cfg : DictConfig):
 
     #openai_client = get_openai_client()
     #openai_client = get_gemini_client()
-    openai_client = get_ollama_client()
+    openai_client = get_ollama_client(model="qwen3.5:9b") #gemma4
 
     save_hydra_config(cfg, exp_out_path)
     save_hydra_config(detections_exp_cfg, exp_out_path, is_detection_config=True)
@@ -270,7 +270,14 @@ def main(cfg : DictConfig):
 
                 masks_np = masks_tensor.cpu().numpy()
             else:
-                masks_np = np.empty((0, *color_tensor.shape[:2]), dtype=np.float64)
+                #masks_np = np.empty((0, *color_tensor.shape[:2]), dtype=np.float64)
+                masks_np = np.empty((0, *color_tensor.shape[:2]), dtype=bool)
+
+            #Converting masks to boolean type for consistency
+            if masks_np is not None and len(masks_np) > 0:
+                masks_np = masks_np.astype(bool)
+            else:
+                masks_np = np.zeros((len(xyxy_np), *color_tensor.shape[:2]), dtype=bool)
 
             # Create a detections object that we will save later
             curr_det = sv.Detections(
@@ -280,7 +287,7 @@ def main(cfg : DictConfig):
                 mask=masks_np,
             )
 
-            if len(curr_det) == 0:
+            if len(curr_det) == 0 or len(curr_det.xyxy) == 0:
                 print(f"Frame {frame_idx}: No objects detected with YOLO/SAM; skipping descriptor processing...")
                 continue
             
@@ -379,7 +386,7 @@ def main(cfg : DictConfig):
         #if len(gobs['mask']) == 0: # no detections in this frame
         #    continue
         if gobs is None or len(gobs.get('mask', [])) == 0:
-            print(f"Frame {frame_idx}: No se encontraron detecciones válidas, saltando frame...")
+            print(f"Frame {frame_idx}: No valid detections found, skipping frame...")
             continue
 
         # this helps make sure things like pillows on couches are separate objects

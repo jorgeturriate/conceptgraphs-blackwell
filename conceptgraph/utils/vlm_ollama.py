@@ -5,6 +5,7 @@ import base64
 import logging
 from typing import List
 from openai import OpenAI
+import ollama
 
 # Silence verbose third-party loggers (httpx, httpcore, PIL, google)
 for logger_name in ("httpx", "httpcore", "google", "google.genai", "PIL", "PngImagePlugin"):
@@ -27,11 +28,16 @@ class OllamaClient:
     """
     def __init__(self, base_url: str = "http://localhost:11434/v1", model: str = "llava"):
         # We use the OpenAI client library but point it to the local Ollama endpoint.
-        self.client = OpenAI(
-            base_url=base_url,
-            api_key="ollama" # The API Key is not required by Ollama but is declared for format
-        )
         self.model = model
+        self.base_url = base_url
+        self.use_native_ollama = "qwen3.5" in model.lower() or "r1" in model.lower()
+
+        if not self.use_native_ollama:
+            self.client = OpenAI(
+                base_url=base_url,
+                api_key="ollama"
+            )
+
 
     def _encode_image_base64(self, image_path: str, resize = False, target_size: int=512):
         print(f"Checking if image exists at path: {image_path}")
@@ -91,24 +97,44 @@ class OllamaClient:
         user_query = f"Here is the list of labels for the annotations of the objects in the image: {label_list}. Please describe the spatial relationships between the objects in the image."
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt_only_top},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": user_query},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}
-                            }
-                        ]
-                    }
-                ],
-                temperature=0.2,
-            )
-            model_text = response.choices[0].message.content or ""
+            if self.use_native_ollama:
+                # Qwen3.5 has a thinking native mode that can be disabled with think=False. This is useful for generating more concise responses.
+                response = ollama.chat(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt_only_top},
+                        {
+                            "role": "user",
+                            "content": user_query,
+                            "images": [base64_img]
+                        }
+                    ],
+                    options={
+                        "temperature": 0.1,
+                        "num_ctx": 4096
+                    },
+                    think=False
+                )
+                model_text = response['message']['content'] or ""
+            else:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt_only_top},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": user_query},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}
+                                }
+                            ]
+                        }
+                    ],
+                    temperature=0.2,
+                )
+                model_text = response.choices[0].message.content or ""
             return extract_list_of_tuples(model_text)
         except Exception as e:
             print(f"[Ollama VLM] Error in relationships: {e}")
@@ -122,24 +148,43 @@ class OllamaClient:
         user_query = f"Here is the list of labels for the annotations of the objects in the image: {label_list}. Please accurately caption the objects in the image."
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt_captions},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": user_query},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}
-                            }
-                        ]
-                    }
-                ],
-                temperature=0.2,
-            )
-            model_text = response.choices[0].message.content or ""
+            if self.use_native_ollama:
+                response = ollama.chat(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt_captions},
+                        {
+                            "role": "user",
+                            "content": user_query,
+                            "images": [base64_img]
+                        }
+                    ],
+                    options={
+                        "temperature": 0.1,
+                        "num_ctx": 4096
+                    },
+                    think=False
+                )
+                model_text = response['message']['content'] or ""
+            else:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt_captions},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": user_query},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}
+                                }
+                            ]
+                        }
+                    ],
+                    temperature=0.2,
+                )
+                model_text = response.choices[0].message.content or ""
             return vlm_extract_object_captions(model_text)
         except Exception as e:
             print(f"[Ollama VLM] Error in captions: {e}")
@@ -154,15 +199,31 @@ class OllamaClient:
         user_query = f"Here are several captions for the same object:\n{captions_text}\n\nPlease consolidate these into a single, clear caption that accurately describes the object."
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt_consolidate_captions},
-                    {"role": "user", "content": user_query}
-                ],
-                temperature=0.2,
-            )
-            return response.choices[0].message.content or ""
+            if self.use_native_ollama:
+                # LLAMADA NATIVA CON OLLAMA
+                response = ollama.chat(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt_consolidate_captions},
+                        {"role": "user", "content": user_query}
+                    ],
+                    options={
+                        "temperature": 0.1,
+                        "num_ctx": 4096
+                    },
+                    think=False
+                )
+                return response['message']['content'] or ""
+            else:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt_consolidate_captions},
+                        {"role": "user", "content": user_query}
+                    ],
+                    temperature=0.2,
+                )
+                return response.choices[0].message.content or ""
         except Exception as e:
             print(f"[Ollama LLM] Error in consolidation: {e}")
             return ""
