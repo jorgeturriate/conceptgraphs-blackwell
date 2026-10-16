@@ -10,19 +10,19 @@ defaults:
   - _self_
 
 
-detections_exp_suffix: s_detections_stride10 # helpful label to identify your detections
+detections_exp_suffix: s_detections_stride15 # helpful label to identify your detections
 force_detection: !!bool True
 save_detections: !!bool True
 
 make_edges: !!bool True
 
 stride: 1
-exp_suffix: r_mapping_stride10 # helpful label to identify your mapping experiment
+exp_suffix: r_mapping_stride15 # helpful label to identify your mapping experiment
 
 save_video: !!bool False
 save_objects_all_frames: !!bool False
 
-downsample_voxel_size: 0.01
+downsample_voxel_size: 0.005 #before was 0.01
 obj_pcd_max_points: 5000
 
 debug_render: !!bool False
@@ -30,14 +30,14 @@ vis_render: !!bool False
 
 denoise_interval: 5           # Run DBSCAN every k frame. This operation is heavy
 filter_interval: 5            # Filter objects that have too few associations or are too small
-merge_interval: 5             # Merge objects based on geometric and semantic similarity
+merge_interval: 5            # Merge objects based on geometric and semantic similarity, it was 5
 run_denoise_final_frame: !!bool True
 run_filter_final_frame: !!bool True
-run_merge_final_frame: !!bool True
+run_merge_final_frame: !!bool True #Before was True, now is False
 
-dbscan_remove_noise: !!bool True
-dbscan_eps: 0.1
-dbscan_min_points: 10
+dbscan_remove_noise: !!bool True #True
+dbscan_eps: 0.2 # Aumentar el radio de búsqueda (20 cm en lugar de 10 cm). Permite que la nube de la planta sea más dispersa sin considerarla ruido.before was 0.1
+dbscan_min_points: 5 # Bajar la cantidad mínima de puntos vecinos. Solo borrará puntos si hay menos de 5 en ese radio de 20 cm, before was 10.
 
 # Selection criteria of the fused object point cloud
 obj_min_points: 0

@@ -333,7 +333,7 @@ def filter_detections(
     iou_threshold: float = 0.80,  # IoU similarity threshold
     proximity_threshold: float = 20.0,  # Default proximity threshold
     keep_larger: bool = True,  # Keep the larger bounding box by area if True, else keep the smaller
-    min_mask_size_ratio=0.00025
+    min_mask_size_ratio=0.0001 # Proportion of the image size to find masks tha can be eliminated, previously was 0.00025
 ) -> tuple[sv.Detections, list[str]]:
     '''
     Filter detections based on confidence, top X detections, and proximity of bounding boxes.
@@ -463,6 +463,8 @@ def make_vlm_edges_and_captions(image, curr_det, obj_classes, detection_class_la
         top_x_detections=150000,
         confidence_threshold=0.00001,
         given_labels=detection_class_labels,
+        iou_threshold=0.75,          # Superposición permitida antes de descartar
+        proximity_threshold=15.0      # Un valor bajo (15) para no borrar plantas cercanas, pero suficiente para evitar clones exactos.
     )
     
     edges = []

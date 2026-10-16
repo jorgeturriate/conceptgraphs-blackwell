@@ -46,36 +46,36 @@ contain_mismatch_penalty: 0.5
 
 # Selection criteria on the 2D masks
 mask_area_threshold: 25 # mask with pixel area less than this will be skipped
-mask_conf_threshold: 0.25 # mask with lower confidence score will be skipped
-max_bbox_area_ratio: 0.5 # boxes with larger areas than this will be skipped
+mask_conf_threshold: 0.015 # mask with lower confidence score will be skipped, before it was 0.25 and then 0.05
+max_bbox_area_ratio: 0.95 # boxes with larger areas than this will be skipped, it was 0.5
 
-min_points_threshold: 16 # projected and sampled pcd with less points will be skipped
+min_points_threshold: 5 # projected and sampled pcd with less points will be skipped, it was 16
 
 # point cloud processing
 obj_pcd_max_points: 5000 # Determines the maximum point count for object point clouds; exceeding this triggers downsampling to approx max points. Set to -1 to disable.
-downsample_voxel_size: 0.025
-dbscan_remove_noise: !!bool True
+downsample_voxel_size: 0.005 #Before was 0.025
+dbscan_remove_noise: !!bool False #Before was True, now is False
 dbscan_eps: 0.1
 dbscan_min_points: 10
 
 # Selection criteria of the fused object point cloud
 obj_min_points: 0
-obj_min_detections: 3
+obj_min_detections: 1 #3 before
 
 # For merge_overlap_objects() function
-merge_overlap_thresh: 0.7      # -1 means do not perform the merge_overlap_objects()
-merge_visual_sim_thresh: 0.7   # Merge only if the visual similarity is larger
-merge_text_sim_thresh: 0.7     # Merge only if the text cosine sim is larger
+merge_overlap_thresh: 0.1      # -1 means do not perform the merge_overlap_objects(), it was 0.7
+merge_visual_sim_thresh: 0.4   # Merge only if the visual similarity is larger, it was 0.7
+merge_text_sim_thresh: 0.4     # Merge only if the text cosine sim is larger, it was 0.7
 
 # Periodically perform post-process operations every k frame
 # -1 means not perform them during the run. They are performed at the end anyway. 
 
 denoise_interval: 20           # Run DBSCAN every k frame. This operation is heavy
 filter_interval: -1            # Filter objects that have too few associations or are too small
-merge_interval: -1             # Merge objects based on geometric and semantic similarity
+merge_interval: 5             # Merge objects based on geometric and semantic similarity
 run_denoise_final_frame: !!bool True
 run_filter_final_frame: !!bool True
-run_merge_final_frame: !!bool True
+run_merge_final_frame: !!bool True #Before was True
 
 # Output point cloud
 save_pcd: !!bool True

@@ -177,8 +177,8 @@ def main(cfg : DictConfig):
 
         ## Initialize the detection models
         detection_model = measure_time(YOLO)('yolov8l-world.pt')
-        #sam_predictor = SAM('sam_l.pt') # SAM('mobile_sam.pt') # UltraLytics SAM
-        sam_predictor = SAM('mobile_sam.pt') # MobileSAM
+        sam_predictor = SAM('sam_l.pt') # SAM('mobile_sam.pt') # UltraLytics SAM
+        #sam_predictor = SAM('mobile_sam.pt') # MobileSAM
         # sam_predictor = measure_time(get_sam_predictor)(cfg) # Normal SAM
         clip_model, _, clip_preprocess = open_clip.create_model_and_transforms(
             "ViT-H-14", "laion2b_s32b_b79k"
@@ -254,7 +254,7 @@ def main(cfg : DictConfig):
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
             # Do initial object detection
-            results = detection_model.predict(color_path, conf=0.1, verbose=False)
+            results = detection_model.predict(color_path, conf=0.015, verbose=False) #before conf=0.1
             confidences = results[0].boxes.conf.cpu().numpy()
             detection_class_ids = results[0].boxes.cls.cpu().numpy().astype(int)
             detection_class_labels = [f"{obj_classes.get_classes_arr()[class_id]} {class_idx}" for class_idx, class_id in enumerate(detection_class_ids)]
